@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>40Hz 实验级刺激器 (精确微调版)</title>
+    <style>
+        body { font-family: -apple-system, system-ui, sans-serif; background: #f0f2f5; padding: 20px; display: flex; justify-content: center; }
+        .card { background: white; padding: 25px; border-radius: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); width: 100%; max-width: 420px; }
+        h2 { margin: 0 0 15px 0; color: #1a1a1a; font-size: 1.3rem; text-align: center; }
+        
+        .status-badge { text-align: center; margin-bottom: 20px; font-size: 0.8rem; font-weight: bold; padding: 5px 15px; border-radius: 20px; display: block; width: fit-content; margin-left: auto; margin-right: auto; }
+        .status-idle { background: #eee; color: #666; }
+        .status-running { background: #e3f2fd; color: #007AFF; border: 1px solid #007AFF; animation: pulse 2s infinite; }
+        
+        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.6; } 100% { opacity: 1; } }
+
+        .control-group { margin: 20px 0; border-bottom: 1px solid #f0f0f0; padding-bottom: 15px; }
+        .locked { opacity: 0.4; pointer-events: none; }
+        
+        label { display: block; margin-bottom: 12px; color: #444; font-size: 0.9rem; font-weight: 600; }
+        .val-display { float: right; font-family: 'Courier New', monospace; font-size: 1.1rem; color: #007AFF; }
+        
+        /* 调节组件样式 */
+        .stepper-wrap { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+        input[type="range"] { flex-grow: 1; height: 6px; cursor: pointer; }
+        .step-btn { 
+            width: 40px; height: 40px; border: 1px solid #ddd; background: #fff; 
+            border-radius: 8px; font-size: 1.2rem; display: flex; align-items: center; 
+            justify-content: center; cursor: pointer; user-select: none;
+        }
+        .step-btn:active { background: #f0f0f0; border-color: #bbb; }
+
+        input[type="number"] { width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 1rem; box-sizing: border-box; }
+        
+        .timer-container { background: #1a1a1a; color: #00ff41; padding: 15px; border-radius: 12px; text-align: center; font-family: monospace; font-size: 2.8rem; margin: 20px 0; }
+        
+        .btn-stack { position: relative; height: 60px; margin-top: 25px; }
+        button.main-ctrl { width: 100%; height: 100%; border: none; border-radius: 12px; font-size: 1.1rem; font-weight: bold; cursor: pointer; position: absolute; transition: 0.3s; }
+        #startBtn { background: #007AFF; color: white; z-index: 2; }
+        #stopBtn { background: #FF3B30; color: white; z-index: 1; opacity: 0; }
+    </style>
+</head>
+<body>
+
+<div class="card">
+    <h2>40Hz Auditory Stimulator</h2>
+    <div id="status" class="status-badge status-idle">已就绪 (READY)</div>
+
+    <div id="settingsPanel">
+        <div class="control-group">
+            <label>载波频率 (Carrier) <span class="val-display" id="carrierVal">1000 Hz</span></label>
+            <div class="stepper-wrap">
+                <button class="step-btn" onclick="adjust('carrierFreq', -5)">-</button>
+                <input type="range" id="carrierFreq" min="100" max="2000" step="1" value="1000">
+                <button class="step-btn" onclick="adjust('carrierFreq', 5)">+</button>
+            </div>
+        </div>
+
+        <div class="control-group">
+            <label>调制频率 (AM) <span class="val-display" id="modVal">40.0 Hz</span></label>
+            <div class="stepper-wrap">
+                <button class="step-btn" onclick="adjust('modFreq', -0.1)">-</button>
+                <input type="range" id="modFreq" min="1" max="100" step="0.1" value="40">
+                <button class="step-btn" onclick="adjust('modFreq', 0.1)">+</button>
+            </div>
+        </div>
+
+        <div class="control-group">
+            <label>实验时长 (Minutes)</label>
+            <input type="number" id="durationInput" value="60">
+        </div>
+    </div>
+
+    <div class="timer-container" id="timer">60:00</div>
+
+    <div class="btn-stack">
+        <button id="startBtn" class="main-ctrl">开始实验</button>
+        <button id="stopBtn" class="main-ctrl">停止并重置</button>
+    </div>
+</div>
+
+<script>
+    let audioCtx, carrierOsc, modOsc, timerInterval, timeLeft;
+    
+    // 获取DOM
+    const carrierInput = document.getElementById('carrierFreq');
+    const modInput = document.getElementById('modFreq');
+    const settingsPanel = document.getElementById('settingsPanel');
+    const startBtn = document.getElementById('startBtn');
+    const stopBtn = document.getElementById('stopBtn');
+    const timerDisplay = document.getElementById('timer');
+
+    // 按钮微调函数
+    window.adjust = function(id, delta) {
+        const el = document.getElementById(id);
+        const newVal = parseFloat(el.value) + delta;
+        if (newVal >= el.min && newVal <= el.max) {
+            el.value = newVal.toFixed(1);
+            updateDisplays();
+        }
+    }
+
+    function updateDisplays() {
+        document.getElementById('carrierVal').innerText = carrierInput.value + " Hz";
+        document.getElementById('modVal').innerText = parseFloat(modInput.value).toFixed(1) + " Hz";
+        const mins = document.getElementById('durationInput').value;
+        timerDisplay.innerText = `${mins.toString().padStart(2, '0')}:00`;
+    }
+
+    carrierInput.oninput = updateDisplays;
+    modInput.oninput = updateDisplays;
+    document.getElementById('durationInput').oninput = updateDisplays;
+
+    function startAudio() {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 96000 });
+        
+        // 核心参数获取
+        const f_c = parseFloat(carrierInput.value);
+        const f_m = parseFloat(modInput.value);
+
+        // 载波
+        carrierOsc = audioCtx.createOscillator();
+        carrierOsc.type = 'sine';
+        carrierOsc.frequency.value = f_c;
+
+        // 调制器
+        modOsc = audioCtx.createOscillator();
+        modOsc.type = 'sine';
+        modOsc.frequency.value = f_m;
+
+        const modAmp = audioCtx.createGain();
+        modAmp.gain.value = 0.5;
+        const offset = audioCtx.createConstantSource();
+        offset.offset.value = 0.5;
+
+        // AM 节点
+        const amNode = audioCtx.createGain();
+        amNode.gain.value = 0; 
+
+        modOsc.connect(modAmp);
+        modAmp.connect(amNode.gain);
+        offset.connect(amNode.gain);
+
+        const mainGain = audioCtx.createGain();
+        mainGain.gain.setValueAtTime(0, audioCtx.currentTime);
+        mainGain.gain.linearRampToValueAtTime(0.7, audioCtx.currentTime + 0.3);
+
+        carrierOsc.connect(amNode);
+        amNode.connect(mainGain);
+        mainGain.connect(audioCtx.destination);
+
+        carrierOsc.start();
+        modOsc.start();
+        offset.start();
+
+        // 锁定 UI
+        settingsPanel.classList.add('locked');
+        startBtn.style.opacity = "0"; startBtn.style.zIndex = "1";
+        stopBtn.style.opacity = "1"; stopBtn.style.zIndex = "2";
+        document.getElementById('status').innerText = "刺激运行中 (RUNNING)";
+        document.getElementById('status').className = "status-badge status-running";
+
+        // 计时逻辑
+        timeLeft = Math.floor(document.getElementById('durationInput').value * 60);
+        timerInterval = setInterval(() => {
+            timeLeft--;
+            const m = Math.floor(timeLeft / 60);
+            const s = timeLeft % 60;
+            timerDisplay.innerText = `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+            if (timeLeft <= 0) stopAudio();
+        }, 1000);
+    }
+
+    function stopAudio() {
+        if (audioCtx) {
+            audioCtx.close();
+        }
+        clearInterval(timerInterval);
+        settingsPanel.classList.remove('locked');
+        startBtn.style.opacity = "1"; startBtn.style.zIndex = "2";
+        stopBtn.style.opacity = "0"; stopBtn.style.zIndex = "1";
+        document.getElementById('status').innerText = "已就绪 (READY)";
+        document.getElementById('status').className = "status-badge status-idle";
+        updateDisplays();
+    }
+
+    startBtn.onclick = startAudio;
+    stopBtn.onclick = stopAudio;
+</script>
+</body>
+</html>

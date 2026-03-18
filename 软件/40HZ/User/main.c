@@ -24,8 +24,8 @@
 
 const u8 sine_table[SINE_TABLE_SIZE] = {
     32, 35, 38, 41, 44, 47, 50, 52,
-    55, 57, 59, 61, 62, 63, 64, 64,
-    64, 64, 63, 62, 61, 59, 57, 55,
+    55, 57, 59, 61, 62, 63, 63, 63,
+    63, 63, 63, 62, 61, 59, 57, 55,
     52, 50, 47, 44, 41, 38, 35, 32,
     29, 26, 23, 20, 17, 14, 11, 8,
     5,  3,  1,  0,  0,  0,  0,  0,
@@ -108,10 +108,12 @@ void TIM1_UP_IRQHandler(void)
     u8 am_value;
     u16 temp;
 
-    // 注释掉AM调制，直接输出1kHz正弦波
-    // am_value = sine_table[am_index];
+    // 恢复AM调制
+    am_value = sine_table[am_index];
+    // 调整调制深度，避免输出饱和
     // temp = (u16)sine_table[sine_index] * am_value / 32;
-    temp = sine_table[sine_index];
+    temp = (u16)sine_table[sine_index] * (am_value - 32) / 64 + 32;
+    // temp = sine_table[sine_index];
 
     if(temp > 63) temp = 63;
     if(temp < 0) temp = 0;
@@ -124,12 +126,19 @@ void TIM1_UP_IRQHandler(void)
         sine_index = 0;
     }
 
-    // 注释掉AM调制索引更新
-    // am_index++;
-    // if(am_index >= SINE_TABLE_SIZE)
-    // {
-    //     am_index = 0;
-    // }
+    // 调整AM调制索引更新速度，实现40Hz调制
+    // 1kHz / 40Hz = 25，每25次载波更新一次调制
+    static u8 am_step = 0;
+    am_step++;
+    if(am_step >= 25)
+    {
+        am_step = 0;
+        am_index++;
+        if(am_index >= SINE_TABLE_SIZE)
+        {
+            am_index = 0;
+        }
+    }
 
     TIM_ClearITPendingBit(TIM1, TIM_IT_Update);
 }

@@ -26,9 +26,9 @@
 #define OLED_I2C_ADDR    0x78  // OLED I2C地址
 
 // ASCII字符集点阵数据声明
-extern u8 asc2_0808[][8];
-extern u8 asc2_0806[][6];
-extern u8 asc2_1608[][16];
+extern const u8 asc2_0808[][8];
+extern const u8 asc2_0806[][6];
+extern const u8 asc2_1608[][16];
 
 // OLED驱动函数声明
 void OLED_Init(void);
@@ -443,7 +443,7 @@ int main(void)
     OLED_ShowString(0, 0, "40Hz AM Wave", 8);
     OLED_ShowString(0, 2, "Freq:1kHz", 8);
     OLED_ShowString(0, 4, "Mod:40Hz", 8);
-    OLED_ShowString(0, 6, "Countdown:", 8);
+    OLED_ShowString(0, 6, "Time:", 8);
 
     // 初始化TIM1
     TIM1_Init();
@@ -590,12 +590,7 @@ void OLED_ShowChar(u8 x, u8 y, u8 chr, u8 size)
         OLED_WriteCmd(0x10 | (x >> 4));
         // 设置列地址低4位
         OLED_WriteCmd(x & 0x0F);
-        
-        // 显示下半部分
-        //for(i = 0; i < 8; i++)
-        //{
-        //    OLED_WriteData(asc2_1608[c][i + 8]);
-        //}
+
     }
     else if(size == 8)
     {
@@ -851,7 +846,7 @@ void Setting_Menu(void)
 }
 
 // 标准8x8 ASCII字符点阵数据（SSD1315兼容，从空格(0x20)开始）
-u8 asc2_0808[][8] = {
+const u8 asc2_0808[][8] = {
     {0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00}, // 0x20 (space)
     {0x00,0x00,0x5F,0x00,0x00,0x00,0x00,0x00}, // 0x21 !
     {0x00,0x07,0x00,0x07,0x00,0x00,0x00,0x00}, // 0x22 "
@@ -951,11 +946,11 @@ u8 asc2_0808[][8] = {
 };
 
 // 简化的8x6点阵数据（暂时不使用）
-u8 asc2_0806[][6] = {
+const u8 asc2_0806[][6] = {
     {0x00, 0x00, 0x00, 0x00, 0x00, 0x00} // 仅保留空格
 };
 
 // 标准16x8 ASCII字符点阵数据（SSD1315兼容，从空格(0x20)开始）
-u8 asc2_1608[][16] = {
+const u8 asc2_1608[][16] = {
     {0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00}, // 0x20 (space)
 };

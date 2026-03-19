@@ -33,8 +33,12 @@ extern u8 asc2_1608[][16];
 void OLED_Init(void);
 void OLED_Clear(void);
 void OLED_ShowString(u8 x, u8 y, u8 *chr, u8 size);
+void OLED_ShowChar(u8 x, u8 y, u8 chr, u8 size);
 void OLED_ShowNum(u8 x, u8 y, u32 num, u8 len, u8 size);
 u32 OLED_Pow(u8 m, u8 n);
+
+// 设置菜单函数声明
+void Setting_Menu(void);
 
 // I2C驱动函数声明
 void I2C_Init_OLED(void);
@@ -62,6 +66,23 @@ volatile u8 countdown_minutes = 30;  // 倒计时分钟数
 volatile u8 countdown_seconds = 0;  // 倒计时秒数
 volatile u8 timer_running = 1;  // 定时器运行标志
 
+// 旋转编码器相关变量
+volatile u8 encoder_state = 0;  // 编码器状态
+volatile u16 encoder_count = 0;  // 编码器计数
+volatile u8 encoder_key_pressed = 0;  // 按键按下标志
+volatile u8 setting_mode = 0;  // 设置模式标志
+volatile u8 current_setting = 0;  // 当前设置项
+volatile u8 last_setting = 0;  // 上一次设置项
+
+// 设置参数
+volatile u8 volume = 32;  // 音量（0-63）
+volatile u8 last_volume = 0;  // 上一次音量
+volatile u8 last_countdown_minutes = 0;  // 上一次倒计时分钟数
+volatile u16 carrier_freq = 1000;  // 载波频率（Hz）
+volatile u16 last_carrier_freq = 0;  // 上一次载波频率
+volatile u16 am_freq = 40;  // AM频率（Hz）
+volatile u16 last_am_freq = 0;  // 上一次AM频率
+
 void DAC_GPIO_Init(void)
 {
     GPIO_InitTypeDef GPIO_InitStructure = {0};
@@ -74,6 +95,28 @@ void DAC_GPIO_Init(void)
     GPIO_Init(GPIOC, &GPIO_InitStructure);
 
     GPIOC->BCR = GPIO_Pin_0 | GPIO_Pin_3 | GPIO_Pin_4 | GPIO_Pin_5 | GPIO_Pin_6 | GPIO_Pin_7;
+}
+
+void Encoder_GPIO_Init(void)
+{
+    GPIO_InitTypeDef GPIO_InitStructure = {0};
+
+    RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOD, ENABLE);
+
+    // PD4 - 按键输入（上拉）
+    GPIO_InitStructure.GPIO_Pin = GPIO_Pin_4;
+    GPIO_InitStructure.GPIO_Mode = GPIO_Mode_IPU;
+    GPIO_Init(GPIOD, &GPIO_InitStructure);
+
+    // PD5 - A相输入（上拉）
+    GPIO_InitStructure.GPIO_Pin = GPIO_Pin_5;
+    GPIO_InitStructure.GPIO_Mode = GPIO_Mode_IPU;
+    GPIO_Init(GPIOD, &GPIO_InitStructure);
+
+    // PD6 - B相输入（上拉）
+    GPIO_InitStructure.GPIO_Pin = GPIO_Pin_6;
+    GPIO_InitStructure.GPIO_Mode = GPIO_Mode_IPU;
+    GPIO_Init(GPIOD, &GPIO_InitStructure);
 }
 
 /*********************************************************************
@@ -209,6 +252,53 @@ void DAC_Output(u8 value)
     else           GPIOC->BCR  = GPIO_Pin_7;
 }
 
+void Encoder_Read(void)
+{
+    static u8 last_a = 1, last_b = 1;
+    u8 current_a, current_b;
+
+    // 读取A相和B相状态
+    current_a = GPIO_ReadInputDataBit(GPIOD, GPIO_Pin_5);
+    current_b = GPIO_ReadInputDataBit(GPIOD, GPIO_Pin_6);
+
+    // 检测旋转方向（改进的AB相检测算法）
+    if(current_a != last_a)
+    {
+        if(current_b != current_a)
+        {
+            encoder_count++;
+        }
+        else
+        {
+            encoder_count--;
+        }
+    }
+    else if(current_b != last_b)
+    {
+        if(current_a == current_b)
+        {
+            encoder_count++;
+        }
+        else
+        {
+            encoder_count--;
+        }
+    }
+
+    last_a = current_a;
+    last_b = current_b;
+
+    // 检测按键按下
+    if(GPIO_ReadInputDataBit(GPIOD, GPIO_Pin_4) == 0)
+    {
+        Delay_Ms(10);  // 消抖
+        if(GPIO_ReadInputDataBit(GPIOD, GPIO_Pin_4) == 0)
+        {
+            encoder_key_pressed = 1;
+        }
+    }
+}
+
 /*********************************************************************
  * @fn      OLED_Init
  * @brief   初始化SSD1315 OLED显示屏（根据官方数据手册）
@@ -290,6 +380,9 @@ int main(void)
     // 初始化DAC GPIO
     DAC_GPIO_Init();
 
+    // 初始化旋转编码器GPIO
+    Encoder_GPIO_Init();
+
     // 初始化I2C和OLED
     I2C_Init_OLED();
     OLED_Init();
@@ -305,7 +398,14 @@ int main(void)
 
     while(1)
     {
-        // 主循环
+        // 读取旋转编码器
+        Encoder_Read();
+
+        // 处理设置菜单
+        Setting_Menu();
+
+        // 延时
+        Delay_Ms(10);
     }
 }
 
@@ -320,9 +420,7 @@ void TIM1_UP_IRQHandler(void)
         // 恢复AM调制
         am_value = sine_table[am_index];
         // 调整调制深度，避免输出饱和
-        // temp = (u16)sine_table[sine_index] * am_value / 32;
-        temp = (u16)sine_table[sine_index] * (am_value - 32) / 64 + 32;
-        // temp = sine_table[sine_index];
+        temp = (u16)sine_table[sine_index] * (am_value - 32) / 64 + volume;
 
         if(temp > 63) temp = 63;
         if(temp < 0) temp = 0;
@@ -335,11 +433,11 @@ void TIM1_UP_IRQHandler(void)
             sine_index = 0;
         }
 
-        // 调整AM调制索引更新速度，实现40Hz调制
-        // 1kHz / 40Hz = 25，每25次载波更新一次调制
+        // 调整AM调制索引更新速度，实现设置的AM频率调制
         static u8 am_step = 0;
+        u16 am_update_interval = carrier_freq / am_freq;
         am_step++;
-        if(am_step >= 25)
+        if(am_step >= am_update_interval)
         {
             am_step = 0;
             am_index++;
@@ -369,9 +467,12 @@ void TIM1_UP_IRQHandler(void)
                 }
             }
             // 更新倒计时显示
-            OLED_ShowNum(64, 6, countdown_minutes, 2, 8);
-            OLED_ShowChar(80, 6, ':', 8);
-            OLED_ShowNum(88, 6, countdown_seconds, 2, 8);
+            if(!setting_mode)
+            {
+                OLED_ShowNum(64, 6, countdown_minutes, 2, 8);
+                OLED_ShowChar(80, 6, ':', 8);
+                OLED_ShowNum(88, 6, countdown_seconds, 2, 8);
+            }
         }
     }
 
@@ -538,6 +639,129 @@ u32 OLED_Pow(u8 m, u8 n)
         result *= m;
     }
     return result;
+}
+
+void Setting_Menu(void)
+{
+    static u16 last_encoder_count = 0;
+
+    // 检测按键按下
+    if(encoder_key_pressed)
+    {
+        encoder_key_pressed = 0;
+        if(setting_mode)
+        {
+            // 切换到下一个设置项
+            current_setting++;
+            if(current_setting >= 4)
+            {
+                setting_mode = 0;
+                current_setting = 0;
+                OLED_Clear();
+                OLED_ShowString(0, 0, "40Hz AM Wave", 8);
+                OLED_ShowString(0, 2, "Freq:1kHz", 8);
+                OLED_ShowString(0, 4, "Mod:40Hz", 8);
+                OLED_ShowString(0, 6, "Countdown:", 8);
+                return;
+            }
+        }
+        else
+        {
+            // 进入设置模式
+            setting_mode = 1;
+            current_setting = 0;
+            last_encoder_count = encoder_count;
+            last_setting = 0;
+            last_volume = 0;
+            last_countdown_minutes = 0;
+            last_carrier_freq = 0;
+            last_am_freq = 0;
+            OLED_Clear();
+            OLED_ShowString(0, 0, "Setting Mode", 8);
+            OLED_ShowString(0, 6, "Press to exit", 8);
+        }
+    }
+
+    if(setting_mode)
+    {
+        // 处理编码器旋转
+        if(encoder_count != last_encoder_count)
+        {
+            u16 diff = encoder_count - last_encoder_count;
+            last_encoder_count = encoder_count;
+
+            switch(current_setting)
+            {
+                case 0:  // 音量设置
+                    volume += diff / 2;
+                    if(volume > 63) volume = 63;
+                    if(volume < 0) volume = 0;
+                    break;
+                case 1:  // 定时时间设置
+                    countdown_minutes += diff / 2;
+                    if(countdown_minutes > 60) countdown_minutes = 60;
+                    if(countdown_minutes < 0) countdown_minutes = 0;
+                    break;
+                case 2:  // 载波频率设置
+                    carrier_freq += diff * 100;
+                    if(carrier_freq > 2000) carrier_freq = 2000;
+                    if(carrier_freq < 500) carrier_freq = 500;
+                    break;
+                case 3:  // AM频率设置
+                    am_freq += diff;
+                    if(am_freq > 100) am_freq = 100;
+                    if(am_freq < 10) am_freq = 10;
+                    break;
+            }
+        }
+
+        // 只在设置项变化或参数变化时更新显示
+        if(current_setting != last_setting || 
+           (current_setting == 0 && volume != last_volume) ||
+           (current_setting == 1 && countdown_minutes != last_countdown_minutes) ||
+           (current_setting == 2 && carrier_freq != last_carrier_freq) ||
+           (current_setting == 3 && am_freq != last_am_freq))
+        {
+            // 清除当前设置项区域
+            OLED_WriteCmd(0xB0 + 2);
+            OLED_WriteCmd(0x00);
+            OLED_WriteCmd(0x10);
+            for(u8 i = 0; i < 128; i++)
+            {
+                OLED_WriteData(0x00);
+            }
+
+            // 显示当前设置项
+            switch(current_setting)
+            {
+                case 0:
+                    OLED_ShowString(0, 2, "Volume:", 8);
+                    OLED_ShowNum(48, 2, volume, 2, 8);
+                    last_volume = volume;
+                    break;
+                case 1:
+                    OLED_ShowString(0, 2, "Timer:", 8);
+                    OLED_ShowNum(48, 2, countdown_minutes, 2, 8);
+                    OLED_ShowString(64, 2, "min", 8);
+                    last_countdown_minutes = countdown_minutes;
+                    break;
+                case 2:
+                    OLED_ShowString(0, 2, "Carrier:", 8);
+                    OLED_ShowNum(48, 2, carrier_freq, 4, 8);
+                    OLED_ShowString(80, 2, "Hz", 8);
+                    last_carrier_freq = carrier_freq;
+                    break;
+                case 3:
+                    OLED_ShowString(0, 2, "AM Freq:", 8);
+                    OLED_ShowNum(48, 2, am_freq, 3, 8);
+                    OLED_ShowString(72, 2, "Hz", 8);
+                    last_am_freq = am_freq;
+                    break;
+            }
+
+            last_setting = current_setting;
+        }
+    }
 }
 
 // 标准8x8 ASCII字符点阵数据（SSD1315兼容，从空格(0x20)开始）

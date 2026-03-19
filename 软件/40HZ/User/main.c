@@ -20,6 +20,7 @@
 
 #include "debug.h"
 #include "ch32v00x_i2c.h"
+#include <stdlib.h>
 
 #define SINE_TABLE_SIZE  64
 #define OLED_I2C_ADDR    0x78  // OLED I2C地址
@@ -65,14 +66,18 @@ volatile u16 timer_count = 0;  // 定时器计数
 volatile u8 countdown_minutes = 30;  // 倒计时分钟数
 volatile u8 countdown_seconds = 0;  // 倒计时秒数
 volatile u8 timer_running = 1;  // 定时器运行标志
+volatile u8 timer_display = 0;  // 定时器显示标志
 
 // 旋转编码器相关变量
 volatile u8 encoder_state = 0;  // 编码器状态
 volatile u16 encoder_count = 0;  // 编码器计数
 volatile u8 encoder_key_pressed = 0;  // 按键按下标志
+volatile u8 encoder_key_released = 0;  // 按键释放标志
 volatile u8 setting_mode = 0;  // 设置模式标志
 volatile u8 current_setting = 0;  // 当前设置项
 volatile u8 last_setting = 0;  // 上一次设置项
+volatile u32 key_press_time = 0;  // 按键按下时间
+volatile u8 key_long_press = 0;  // 长按标志
 
 // 设置参数
 volatile u8 volume = 32;  // 音量（0-63）
@@ -117,6 +122,58 @@ void Encoder_GPIO_Init(void)
     GPIO_InitStructure.GPIO_Pin = GPIO_Pin_6;
     GPIO_InitStructure.GPIO_Mode = GPIO_Mode_IPU;
     GPIO_Init(GPIOD, &GPIO_InitStructure);
+}
+
+void DAC_Output(u8 value)
+{
+    u32 temp = value & 0x3F;
+
+    if(temp & 0x01) GPIOC->BSHR = GPIO_Pin_0;
+    else           GPIOC->BCR  = GPIO_Pin_0;
+
+    if(temp & 0x02) GPIOC->BSHR = GPIO_Pin_3;
+    else           GPIOC->BCR  = GPIO_Pin_3;
+
+    if(temp & 0x04) GPIOC->BSHR = GPIO_Pin_4;
+    else           GPIOC->BCR  = GPIO_Pin_4;
+
+    if(temp & 0x08) GPIOC->BSHR = GPIO_Pin_5;
+    else           GPIOC->BCR  = GPIO_Pin_5;
+
+    if(temp & 0x10) GPIOC->BSHR = GPIO_Pin_6;
+    else           GPIOC->BCR  = GPIO_Pin_6;
+
+    if(temp & 0x20) GPIOC->BSHR = GPIO_Pin_7;
+    else           GPIOC->BCR  = GPIO_Pin_7;
+}
+
+void TIM1_Init(void)
+{
+    TIM_TimeBaseInitTypeDef TIM_TimeBaseInitStructure = {0};
+    NVIC_InitTypeDef NVIC_InitStructure = {0};
+
+    RCC_APB2PeriphClockCmd(RCC_APB2Periph_TIM1, ENABLE);
+
+    // 系统时钟24MHz，预分频器0，周期374
+    // 中断频率 = 24,000,000 / (1 × 375) = 64,000Hz
+    // 载波频率 = 64,000Hz / 64点 = 1000Hz (精确1kHz)
+    TIM_TimeBaseInitStructure.TIM_Period = 374;
+    TIM_TimeBaseInitStructure.TIM_Prescaler = 0;
+    TIM_TimeBaseInitStructure.TIM_ClockDivision = TIM_CKD_DIV1;
+    TIM_TimeBaseInitStructure.TIM_CounterMode = TIM_CounterMode_Up;
+    TIM_TimeBaseInitStructure.TIM_RepetitionCounter = 0;
+    TIM_TimeBaseInit(TIM1, &TIM_TimeBaseInitStructure);
+
+    TIM_ClearITPendingBit(TIM1, TIM_IT_Update);
+
+    NVIC_InitStructure.NVIC_IRQChannel = TIM1_UP_IRQn;
+    NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 0;
+    NVIC_InitStructure.NVIC_IRQChannelSubPriority = 0;
+    NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
+    NVIC_Init(&NVIC_InitStructure);
+
+    TIM_ITConfig(TIM1, TIM_IT_Update, ENABLE);
+    TIM_Cmd(TIM1, ENABLE);
 }
 
 /*********************************************************************
@@ -229,73 +286,95 @@ void OLED_WriteData(u8 data)
     I2C_GenerateSTOP(I2C1, ENABLE);
 }
 
-void DAC_Output(u8 value)
-{
-    u32 temp = value & 0x3F;
 
-    if(temp & 0x01) GPIOC->BSHR = GPIO_Pin_0;
-    else           GPIOC->BCR  = GPIO_Pin_0;
-
-    if(temp & 0x02) GPIOC->BSHR = GPIO_Pin_3;
-    else           GPIOC->BCR  = GPIO_Pin_3;
-
-    if(temp & 0x04) GPIOC->BSHR = GPIO_Pin_4;
-    else           GPIOC->BCR  = GPIO_Pin_4;
-
-    if(temp & 0x08) GPIOC->BSHR = GPIO_Pin_5;
-    else           GPIOC->BCR  = GPIO_Pin_5;
-
-    if(temp & 0x10) GPIOC->BSHR = GPIO_Pin_6;
-    else           GPIOC->BCR  = GPIO_Pin_6;
-
-    if(temp & 0x20) GPIOC->BSHR = GPIO_Pin_7;
-    else           GPIOC->BCR  = GPIO_Pin_7;
-}
 
 void Encoder_Read(void)
 {
     static u8 last_a = 1, last_b = 1;
+    static u8 key_state = 0;  // 按键状态机
+    static u32 key_timer = 0;  // 按键定时器
     u8 current_a, current_b;
 
     // 读取A相和B相状态
     current_a = GPIO_ReadInputDataBit(GPIOD, GPIO_Pin_5);
     current_b = GPIO_ReadInputDataBit(GPIOD, GPIO_Pin_6);
 
-    // 检测旋转方向（改进的AB相检测算法）
-    if(current_a != last_a)
+    // 检测旋转方向（双向边沿检测）
+    // 使用经典的正交编码器检测算法
+    u8 current_state = (current_a << 1) | current_b;
+    u8 previous_state = (last_a << 1) | last_b;
+    
+    if(current_state != previous_state)
     {
-        if(current_b != current_a)
+        // 状态转换表
+        // 顺时针: 11→10→00→01→11
+        // 逆时针: 11→01→00→10→11
+        if((previous_state == 0x03 && current_state == 0x01) || 
+           (previous_state == 0x01 && current_state == 0x00) || 
+           (previous_state == 0x00 && current_state == 0x02) || 
+           (previous_state == 0x02 && current_state == 0x03))
         {
-            encoder_count++;
+            encoder_count++;  // 顺时针
         }
-        else
+        else if((previous_state == 0x03 && current_state == 0x02) || 
+                (previous_state == 0x02 && current_state == 0x00) || 
+                (previous_state == 0x00 && current_state == 0x01) || 
+                (previous_state == 0x01 && current_state == 0x03))
         {
-            encoder_count--;
-        }
-    }
-    else if(current_b != last_b)
-    {
-        if(current_a == current_b)
-        {
-            encoder_count++;
-        }
-        else
-        {
-            encoder_count--;
+            encoder_count--;  // 逆时针
         }
     }
 
     last_a = current_a;
     last_b = current_b;
 
-    // 检测按键按下
-    if(GPIO_ReadInputDataBit(GPIOD, GPIO_Pin_4) == 0)
+    // 按键状态机消抖
+    u8 key_input = GPIO_ReadInputDataBit(GPIOD, GPIO_Pin_4);
+    switch(key_state)
     {
-        Delay_Ms(10);  // 消抖
-        if(GPIO_ReadInputDataBit(GPIOD, GPIO_Pin_4) == 0)
-        {
-            encoder_key_pressed = 1;
-        }
+        case 0:  // 等待按键按下
+            if(key_input == 0)
+            {
+                key_timer = 0;
+                key_state = 1;
+            }
+            break;
+        case 1:  // 消抖阶段
+            key_timer++;
+            if(key_timer >= 40)  // 40ms消抖
+            {
+                if(key_input == 0)
+                {
+                    key_state = 2;
+                    key_press_time = 0;
+                    encoder_key_pressed = 1;
+                }
+                else
+                {
+                    key_state = 0;
+                }
+            }
+            break;
+        case 2:  // 按键按下状态
+            key_press_time++;
+            if(key_press_time >= 1000)  // 1秒长按
+            {
+                key_long_press = 1;
+            }
+            if(key_input == 1)
+            {
+                key_state = 3;
+                key_timer = 0;
+            }
+            break;
+        case 3:  // 释放消抖
+            key_timer++;
+            if(key_timer >= 20)  // 20ms释放消抖
+            {
+                key_state = 0;
+                encoder_key_released = 1;
+            }
+            break;
     }
 }
 
@@ -337,34 +416,7 @@ void OLED_Init(void)
     OLED_Clear();  // 清屏
 }
 
-void TIM1_Init(void)
-{
-    TIM_TimeBaseInitTypeDef TIM_TimeBaseInitStructure = {0};
-    NVIC_InitTypeDef NVIC_InitStructure = {0};
 
-    RCC_APB2PeriphClockCmd(RCC_APB2Periph_TIM1, ENABLE);
-
-    // 系统时钟24MHz，预分频器23，周期999
-    // 中断频率 = 24,000,000 / (24 × 1000) = 1000Hz
-    // 载波频率 = 1000Hz / 64点 = 15.625kHz (不影响波形输出质量)
-    TIM_TimeBaseInitStructure.TIM_Period = 999;
-    TIM_TimeBaseInitStructure.TIM_Prescaler = 23;
-    TIM_TimeBaseInitStructure.TIM_ClockDivision = TIM_CKD_DIV1;
-    TIM_TimeBaseInitStructure.TIM_CounterMode = TIM_CounterMode_Up;
-    TIM_TimeBaseInitStructure.TIM_RepetitionCounter = 0;
-    TIM_TimeBaseInit(TIM1, &TIM_TimeBaseInitStructure);
-
-    TIM_ClearITPendingBit(TIM1, TIM_IT_Update);
-
-    NVIC_InitStructure.NVIC_IRQChannel = TIM1_UP_IRQn;
-    NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 0;
-    NVIC_InitStructure.NVIC_IRQChannelSubPriority = 0;
-    NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
-    NVIC_Init(&NVIC_InitStructure);
-
-    TIM_ITConfig(TIM1, TIM_IT_Update, ENABLE);
-    TIM_Cmd(TIM1, ENABLE);
-}
 
 /*********************************************************************
  * @fn      main
@@ -406,6 +458,14 @@ int main(void)
 
         // 延时
         Delay_Ms(10);
+        // 更新倒计时显示
+        if(!setting_mode && timer_display)
+        {
+            timer_display = 0;  // 重置显示标志 
+            OLED_ShowNum(64, 6, countdown_minutes, 2, 8);
+            OLED_ShowChar(80, 6, ':', 8);
+            OLED_ShowNum(88, 6, countdown_seconds, 2, 8);
+        }
     }
 }
 
@@ -433,11 +493,11 @@ void TIM1_UP_IRQHandler(void)
             sine_index = 0;
         }
 
-        // 调整AM调制索引更新速度，实现设置的AM频率调制
+        // 调整AM调制索引更新速度，实现40Hz调制
+        // 1kHz / 40Hz = 25，每25次载波更新一次调制
         static u8 am_step = 0;
-        u16 am_update_interval = carrier_freq / am_freq;
         am_step++;
-        if(am_step >= am_update_interval)
+        if(am_step >= 25)
         {
             am_step = 0;
             am_index++;
@@ -447,9 +507,9 @@ void TIM1_UP_IRQHandler(void)
             }
         }
 
-        // 定时器计数（1kHz中断，每1000次为1秒）
+        // 定时器计数（1秒中断）
         timer_count++;
-        if(timer_count >= 1000)
+        if(timer_count >= 64000)
         {
             timer_count = 0;
             countdown_seconds--;
@@ -466,13 +526,8 @@ void TIM1_UP_IRQHandler(void)
                     return;
                 }
             }
-            // 更新倒计时显示
-            if(!setting_mode)
-            {
-                OLED_ShowNum(64, 6, countdown_minutes, 2, 8);
-                OLED_ShowChar(80, 6, ':', 8);
-                OLED_ShowNum(88, 6, countdown_seconds, 2, 8);
-            }
+            timer_display = 1;  // 标记需要更新显示
+
         }
     }
 
@@ -644,6 +699,7 @@ u32 OLED_Pow(u8 m, u8 n)
 void Setting_Menu(void)
 {
     static u16 last_encoder_count = 0;
+    static u8 encoder_step = 0;  // 编码器步长计数器
 
     // 检测按键按下
     if(encoder_key_pressed)
@@ -671,6 +727,7 @@ void Setting_Menu(void)
             setting_mode = 1;
             current_setting = 0;
             last_encoder_count = encoder_count;
+            encoder_step = 0;
             last_setting = 0;
             last_volume = 0;
             last_countdown_minutes = 0;
@@ -684,34 +741,63 @@ void Setting_Menu(void)
 
     if(setting_mode)
     {
-        // 处理编码器旋转
+        // 处理编码器旋转（带步长控制）
         if(encoder_count != last_encoder_count)
         {
             u16 diff = encoder_count - last_encoder_count;
             last_encoder_count = encoder_count;
 
-            switch(current_setting)
+            // 每次只处理一个脉冲
+            if(diff > 0)
             {
-                case 0:  // 音量设置
-                    volume += diff / 2;
-                    if(volume > 63) volume = 63;
-                    if(volume < 0) volume = 0;
-                    break;
-                case 1:  // 定时时间设置
-                    countdown_minutes += diff / 2;
-                    if(countdown_minutes > 60) countdown_minutes = 60;
-                    if(countdown_minutes < 0) countdown_minutes = 0;
-                    break;
-                case 2:  // 载波频率设置
-                    carrier_freq += diff * 100;
-                    if(carrier_freq > 2000) carrier_freq = 2000;
-                    if(carrier_freq < 500) carrier_freq = 500;
-                    break;
-                case 3:  // AM频率设置
-                    am_freq += diff;
-                    if(am_freq > 100) am_freq = 100;
-                    if(am_freq < 10) am_freq = 10;
-                    break;
+                encoder_step++;
+            }
+            else
+            {
+                encoder_step--;
+            }
+
+            // 每2个脉冲更新一次参数
+            if(abs(encoder_step) >= 2)
+            {
+                u8 step = abs(encoder_step) / 2;
+                encoder_step = 0;
+
+                switch(current_setting)
+                {
+                    case 0:  // 音量设置
+                        if(diff > 0)
+                            volume += step;
+                        else
+                            volume -= step;
+                        if(volume > 63) volume = 63;
+                        if(volume < 0) volume = 0;
+                        break;
+                    case 1:  // 定时时间设置
+                        if(diff > 0)
+                            countdown_minutes += step;
+                        else
+                            countdown_minutes -= step;
+                        if(countdown_minutes > 60) countdown_minutes = 60;
+                        if(countdown_minutes < 0) countdown_minutes = 0;
+                        break;
+                    case 2:  // 载波频率设置
+                        if(diff > 0)
+                            carrier_freq += step * 100;
+                        else
+                            carrier_freq -= step * 100;
+                        if(carrier_freq > 2000) carrier_freq = 2000;
+                        if(carrier_freq < 500) carrier_freq = 500;
+                        break;
+                    case 3:  // AM频率设置
+                        if(diff > 0)
+                            am_freq += step;
+                        else
+                            am_freq -= step;
+                        if(am_freq > 100) am_freq = 100;
+                        if(am_freq < 10) am_freq = 10;
+                        break;
+                }
             }
         }
 

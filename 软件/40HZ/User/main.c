@@ -254,11 +254,11 @@ void TIM1_Init(void)
 
     RCC_APB2PeriphClockCmd(RCC_APB2Periph_TIM1, ENABLE);
 
-    // 系统时钟24MHz，预分频器0，周期374
-    // 中断频率 = 24,000,000 / (1 × 375) = 64,000Hz
-    // 载波频率 = 64,000Hz / 64点 = 1000Hz (精确1kHz)
-    TIM_TimeBaseInitStructure.TIM_Period = 374;
-    TIM_TimeBaseInitStructure.TIM_Prescaler = 0;
+    // 系统时钟24MHz，预分频器23，周期999
+    // 中断频率 = 24,000,000 / (24 × 1000) = 1000Hz
+    // 载波频率 = 1000Hz / 64点 = 15.625kHz (不影响波形输出质量)
+    TIM_TimeBaseInitStructure.TIM_Period = 999;
+    TIM_TimeBaseInitStructure.TIM_Prescaler = 23;
     TIM_TimeBaseInitStructure.TIM_ClockDivision = TIM_CKD_DIV1;
     TIM_TimeBaseInitStructure.TIM_CounterMode = TIM_CounterMode_Up;
     TIM_TimeBaseInitStructure.TIM_RepetitionCounter = 0;

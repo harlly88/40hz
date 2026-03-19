@@ -38,8 +38,7 @@ void OLED_ShowChar(u8 x, u8 y, u8 chr, u8 size);
 void OLED_ShowNum(u8 x, u8 y, u32 num, u8 len, u8 size);
 u32 OLED_Pow(u8 m, u8 n);
 
-// 设置菜单函数声明
-void Setting_Menu(void);
+
 
 // I2C驱动函数声明
 void I2C_Init_OLED(void);
@@ -71,22 +70,10 @@ volatile u8 timer_display = 0;  // 定时器显示标志
 // 旋转编码器相关变量
 volatile u8 encoder_state = 0;  // 编码器状态
 volatile u16 encoder_count = 0;  // 编码器计数
-volatile u8 encoder_key_pressed = 0;  // 按键按下标志
-volatile u8 encoder_key_released = 0;  // 按键释放标志
-volatile u8 setting_mode = 0;  // 设置模式标志
-volatile u8 current_setting = 0;  // 当前设置项
-volatile u8 last_setting = 0;  // 上一次设置项
-volatile u32 key_press_time = 0;  // 按键按下时间
-volatile u8 key_long_press = 0;  // 长按标志
 
 // 设置参数
-volatile u8 volume = 32;  // 音量（0-63）
-volatile u8 last_volume = 0;  // 上一次音量
-volatile u8 last_countdown_minutes = 0;  // 上一次倒计时分钟数
-volatile u16 carrier_freq = 1000;  // 载波频率（Hz）
-volatile u16 last_carrier_freq = 0;  // 上一次载波频率
-volatile u16 am_freq = 40;  // AM频率（Hz）
-volatile u16 last_am_freq = 0;  // 上一次AM频率
+volatile int8_t volume = 32;  // 音量（0-63）
+volatile u8 last_volume_display = 0;  // 上一次显示的音量
 
 void DAC_GPIO_Init(void)
 {
@@ -287,95 +274,42 @@ void OLED_WriteData(u8 data)
 }
 
 
-
+// 读取旋转编码器状态
 void Encoder_Read(void)
 {
     static u8 last_a = 1, last_b = 1;
-    static u8 key_state = 0;  // 按键状态机
-    static u32 key_timer = 0;  // 按键定时器
     u8 current_a, current_b;
 
     // 读取A相和B相状态
     current_a = GPIO_ReadInputDataBit(GPIOD, GPIO_Pin_5);
     current_b = GPIO_ReadInputDataBit(GPIOD, GPIO_Pin_6);
 
-    // 检测旋转方向（双向边沿检测）
-    // 使用经典的正交编码器检测算法
-    u8 current_state = (current_a << 1) | current_b;
-    u8 previous_state = (last_a << 1) | last_b;
-    
-    if(current_state != previous_state)
+    // 检测旋转方向（改进的AB相检测算法）
+    if(current_a != last_a)
     {
-        // 状态转换表
-        // 顺时针: 11→10→00→01→11
-        // 逆时针: 11→01→00→10→11
-        if((previous_state == 0x03 && current_state == 0x01) || 
-           (previous_state == 0x01 && current_state == 0x00) || 
-           (previous_state == 0x00 && current_state == 0x02) || 
-           (previous_state == 0x02 && current_state == 0x03))
+        if(current_b != current_a)
         {
-            encoder_count++;  // 顺时针
+            encoder_count++;
         }
-        else if((previous_state == 0x03 && current_state == 0x02) || 
-                (previous_state == 0x02 && current_state == 0x00) || 
-                (previous_state == 0x00 && current_state == 0x01) || 
-                (previous_state == 0x01 && current_state == 0x03))
+        else
         {
-            encoder_count--;  // 逆时针
+            encoder_count--;
+        }
+    }
+    else if(current_b != last_b)
+    {
+        if(current_a == current_b)
+        {
+            encoder_count++;
+        }
+        else
+        {
+            encoder_count--;
         }
     }
 
     last_a = current_a;
     last_b = current_b;
-
-    // 按键状态机消抖
-    u8 key_input = GPIO_ReadInputDataBit(GPIOD, GPIO_Pin_4);
-    switch(key_state)
-    {
-        case 0:  // 等待按键按下
-            if(key_input == 0)
-            {
-                key_timer = 0;
-                key_state = 1;
-            }
-            break;
-        case 1:  // 消抖阶段
-            key_timer++;
-            if(key_timer >= 40)  // 40ms消抖
-            {
-                if(key_input == 0)
-                {
-                    key_state = 2;
-                    key_press_time = 0;
-                    encoder_key_pressed = 1;
-                }
-                else
-                {
-                    key_state = 0;
-                }
-            }
-            break;
-        case 2:  // 按键按下状态
-            key_press_time++;
-            if(key_press_time >= 1000)  // 1秒长按
-            {
-                key_long_press = 1;
-            }
-            if(key_input == 1)
-            {
-                key_state = 3;
-                key_timer = 0;
-            }
-            break;
-        case 3:  // 释放消抖
-            key_timer++;
-            if(key_timer >= 20)  // 20ms释放消抖
-            {
-                key_state = 0;
-                encoder_key_released = 1;
-            }
-            break;
-    }
 }
 
 /*********************************************************************
@@ -416,123 +350,6 @@ void OLED_Init(void)
     OLED_Clear();  // 清屏
 }
 
-
-
-/*********************************************************************
- * @fn      main
- * @brief   Main program.
- * @return  none
- ********************************************************************/
-int main(void)
-{
-    NVIC_PriorityGroupConfig(NVIC_PriorityGroup_1);
-    SystemCoreClockUpdate();
-    Delay_Init();
-
-    // 初始化DAC GPIO
-    DAC_GPIO_Init();
-
-    // 初始化旋转编码器GPIO
-    Encoder_GPIO_Init();
-
-    // 初始化I2C和OLED
-    I2C_Init_OLED();
-    OLED_Init();
-
-    // 显示信息（使用8x8字体）
-    OLED_ShowString(0, 0, "40Hz AM Wave", 8);
-    OLED_ShowString(0, 2, "Freq:1kHz", 8);
-    OLED_ShowString(0, 4, "Mod:40Hz", 8);
-    OLED_ShowString(0, 6, "Time:", 8);
-
-    // 初始化TIM1
-    TIM1_Init();
-
-    while(1)
-    {
-        // 读取旋转编码器
-        Encoder_Read();
-
-        // 处理设置菜单
-        Setting_Menu();
-
-        // 延时
-        Delay_Ms(10);
-        // 更新倒计时显示
-        if(!setting_mode && timer_display)
-        {
-            timer_display = 0;  // 重置显示标志 
-            OLED_ShowNum(64, 6, countdown_minutes, 2, 8);
-            OLED_ShowChar(80, 6, ':', 8);
-            OLED_ShowNum(88, 6, countdown_seconds, 2, 8);
-        }
-    }
-}
-
-void TIM1_UP_IRQHandler(void) __attribute__((interrupt("WCH-Interrupt-fast")));
-void TIM1_UP_IRQHandler(void)
-{
-    u8 am_value;
-    u16 temp;
-
-    if(timer_running)
-    {
-        // 恢复AM调制
-        am_value = sine_table[am_index];
-        // 调整调制深度，避免输出饱和
-        temp = (u16)sine_table[sine_index] * (am_value - 32) / 64 + volume;
-
-        if(temp > 63) temp = 63;
-        if(temp < 0) temp = 0;
-
-        DAC_Output((u8)temp);
-
-        sine_index++;
-        if(sine_index >= SINE_TABLE_SIZE)
-        {
-            sine_index = 0;
-        }
-
-        // 调整AM调制索引更新速度，实现40Hz调制
-        // 1kHz / 40Hz = 25，每25次载波更新一次调制
-        static u8 am_step = 0;
-        am_step++;
-        if(am_step >= 25)
-        {
-            am_step = 0;
-            am_index++;
-            if(am_index >= SINE_TABLE_SIZE)
-            {
-                am_index = 0;
-            }
-        }
-
-        // 定时器计数（1秒中断）
-        timer_count++;
-        if(timer_count >= 64000)
-        {
-            timer_count = 0;
-            countdown_seconds--;
-            if(countdown_seconds == 255)  // 下溢
-            {
-                countdown_seconds = 59;
-                countdown_minutes--;
-                if(countdown_minutes == 255)  // 下溢，定时结束
-                {
-                    timer_running = 0;
-                    TIM_Cmd(TIM1, DISABLE);  // 关闭TIM1定时器
-                    DAC_Output(0);  // 关闭DAC输出
-                    OLED_ShowString(64, 6, " 00:00", 8);
-                    return;
-                }
-            }
-            timer_display = 1;  // 标记需要更新显示
-
-        }
-    }
-
-    TIM_ClearITPendingBit(TIM1, TIM_IT_Update);
-}
 
 /*********************************************************************
  * @fn      OLED_Clear
@@ -691,159 +508,7 @@ u32 OLED_Pow(u8 m, u8 n)
     return result;
 }
 
-void Setting_Menu(void)
-{
-    static u16 last_encoder_count = 0;
-    static u8 encoder_step = 0;  // 编码器步长计数器
 
-    // 检测按键按下
-    if(encoder_key_pressed)
-    {
-        encoder_key_pressed = 0;
-        if(setting_mode)
-        {
-            // 切换到下一个设置项
-            current_setting++;
-            if(current_setting >= 4)
-            {
-                setting_mode = 0;
-                current_setting = 0;
-                OLED_Clear();
-                OLED_ShowString(0, 0, "40Hz AM Wave", 8);
-                OLED_ShowString(0, 2, "Freq:1kHz", 8);
-                OLED_ShowString(0, 4, "Mod:40Hz", 8);
-                OLED_ShowString(0, 6, "Countdown:", 8);
-                return;
-            }
-        }
-        else
-        {
-            // 进入设置模式
-            setting_mode = 1;
-            current_setting = 0;
-            last_encoder_count = encoder_count;
-            encoder_step = 0;
-            last_setting = 0;
-            last_volume = 0;
-            last_countdown_minutes = 0;
-            last_carrier_freq = 0;
-            last_am_freq = 0;
-            OLED_Clear();
-            OLED_ShowString(0, 0, "Setting Mode", 8);
-            OLED_ShowString(0, 6, "Press to exit", 8);
-        }
-    }
-
-    if(setting_mode)
-    {
-        // 处理编码器旋转（带步长控制）
-        if(encoder_count != last_encoder_count)
-        {
-            u16 diff = encoder_count - last_encoder_count;
-            last_encoder_count = encoder_count;
-
-            // 每次只处理一个脉冲
-            if(diff > 0)
-            {
-                encoder_step++;
-            }
-            else
-            {
-                encoder_step--;
-            }
-
-            // 每2个脉冲更新一次参数
-            if(abs(encoder_step) >= 2)
-            {
-                u8 step = abs(encoder_step) / 2;
-                encoder_step = 0;
-
-                switch(current_setting)
-                {
-                    case 0:  // 音量设置
-                        if(diff > 0)
-                            volume += step;
-                        else
-                            volume -= step;
-                        if(volume > 63) volume = 63;
-                        if(volume < 0) volume = 0;
-                        break;
-                    case 1:  // 定时时间设置
-                        if(diff > 0)
-                            countdown_minutes += step;
-                        else
-                            countdown_minutes -= step;
-                        if(countdown_minutes > 60) countdown_minutes = 60;
-                        if(countdown_minutes < 0) countdown_minutes = 0;
-                        break;
-                    case 2:  // 载波频率设置
-                        if(diff > 0)
-                            carrier_freq += step * 100;
-                        else
-                            carrier_freq -= step * 100;
-                        if(carrier_freq > 2000) carrier_freq = 2000;
-                        if(carrier_freq < 500) carrier_freq = 500;
-                        break;
-                    case 3:  // AM频率设置
-                        if(diff > 0)
-                            am_freq += step;
-                        else
-                            am_freq -= step;
-                        if(am_freq > 100) am_freq = 100;
-                        if(am_freq < 10) am_freq = 10;
-                        break;
-                }
-            }
-        }
-
-        // 只在设置项变化或参数变化时更新显示
-        if(current_setting != last_setting || 
-           (current_setting == 0 && volume != last_volume) ||
-           (current_setting == 1 && countdown_minutes != last_countdown_minutes) ||
-           (current_setting == 2 && carrier_freq != last_carrier_freq) ||
-           (current_setting == 3 && am_freq != last_am_freq))
-        {
-            // 清除当前设置项区域
-            OLED_WriteCmd(0xB0 + 2);
-            OLED_WriteCmd(0x00);
-            OLED_WriteCmd(0x10);
-            for(u8 i = 0; i < 128; i++)
-            {
-                OLED_WriteData(0x00);
-            }
-
-            // 显示当前设置项
-            switch(current_setting)
-            {
-                case 0:
-                    OLED_ShowString(0, 2, "Volume:", 8);
-                    OLED_ShowNum(48, 2, volume, 2, 8);
-                    last_volume = volume;
-                    break;
-                case 1:
-                    OLED_ShowString(0, 2, "Timer:", 8);
-                    OLED_ShowNum(48, 2, countdown_minutes, 2, 8);
-                    OLED_ShowString(64, 2, "min", 8);
-                    last_countdown_minutes = countdown_minutes;
-                    break;
-                case 2:
-                    OLED_ShowString(0, 2, "Carrier:", 8);
-                    OLED_ShowNum(48, 2, carrier_freq, 4, 8);
-                    OLED_ShowString(80, 2, "Hz", 8);
-                    last_carrier_freq = carrier_freq;
-                    break;
-                case 3:
-                    OLED_ShowString(0, 2, "AM Freq:", 8);
-                    OLED_ShowNum(48, 2, am_freq, 3, 8);
-                    OLED_ShowString(72, 2, "Hz", 8);
-                    last_am_freq = am_freq;
-                    break;
-            }
-
-            last_setting = current_setting;
-        }
-    }
-}
 
 // 标准8x8 ASCII字符点阵数据（SSD1315兼容，从空格(0x20)开始）
 const u8 asc2_0808[][8] = {
@@ -954,3 +619,146 @@ const u8 asc2_0806[][6] = {
 const u8 asc2_1608[][16] = {
     {0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00}, // 0x20 (space)
 };
+
+
+
+/*********************************************************************
+ * @fn      main
+ * @brief   Main program.
+ * @return  none
+ ********************************************************************/
+int main(void)
+{
+    NVIC_PriorityGroupConfig(NVIC_PriorityGroup_1);
+    SystemCoreClockUpdate();
+    Delay_Init();
+
+    // 初始化DAC GPIO
+    DAC_GPIO_Init();
+
+    // 初始化旋转编码器GPIO
+    Encoder_GPIO_Init();
+
+    // 初始化I2C和OLED
+    I2C_Init_OLED();
+    OLED_Init();
+
+    // 显示信息（使用8x8字体）
+    OLED_ShowString(0, 0, "40Hz AM Wave", 8);
+    //OLED_ShowString(0, 2, "Freq: 1kHz", 8);
+    OLED_ShowString(0, 2, "Volume: ", 8);
+    OLED_ShowNum(64, 2, volume, 2, 8);  // 显示初始音量
+    OLED_ShowString(0, 6, "Time: ", 8);
+
+    // 初始化TIM1
+    TIM1_Init();
+
+    while(1)
+    {
+        // 读取旋转编码器
+        Encoder_Read();
+
+        // 处理编码器旋转控制音量
+        static u16 last_encoder_count = 0;
+        if(encoder_count != last_encoder_count)
+        {
+            u16 diff = encoder_count - last_encoder_count;
+            last_encoder_count = encoder_count;
+
+            // 直接调整音量，正数增加，负数减少
+            volume += diff ;
+
+            // 限制音量范围0-63
+            volume = volume > 63 ? 63 : volume < 0 ? 0 : volume;
+        }
+
+        // 更新音量显示
+        if(volume != last_volume_display)
+        {
+            last_volume_display = volume;
+            OLED_ShowNum(64, 2, volume, 2, 8);
+        }
+
+        // 延时
+        Delay_Ms(10);
+        // 更新倒计时显示
+        if(timer_display)
+        {
+            timer_display = 0;  // 重置显示标志 
+            OLED_ShowNum(64, 6, countdown_minutes, 2, 8);
+            OLED_ShowChar(80, 6, ':', 8);
+            OLED_ShowNum(88, 6, countdown_seconds, 2, 8);
+            if(countdown_seconds < 10)
+            {
+                OLED_ShowChar(88, 6, '0', 8);
+            }
+        }
+    }
+}
+
+void TIM1_UP_IRQHandler(void) __attribute__((interrupt("WCH-Interrupt-fast")));
+void TIM1_UP_IRQHandler(void)
+{
+    u8 am_value;
+    u16 temp;
+
+    if(timer_running)
+    {
+        // 恢复AM调制
+        am_value = sine_table[am_index];
+        // 调整调制深度，避免输出饱和
+        temp = (u16)sine_table[sine_index] * (am_value - 32) / 64 + volume;
+
+        if(temp > 63) temp = 63;
+        if(temp < 0) temp = 0;
+
+        DAC_Output((u8)temp);
+
+        sine_index++;
+        if(sine_index >= SINE_TABLE_SIZE)
+        {
+            sine_index = 0;
+        }
+
+        // 调整AM调制索引更新速度，实现40Hz调制
+        // 1kHz / 40Hz = 25，每25次载波更新一次调制
+        static u8 am_step = 0;
+        am_step++;
+        if(am_step >= 25)
+        {
+            am_step = 0;
+            am_index++;
+            if(am_index >= SINE_TABLE_SIZE)
+            {
+                am_index = 0;
+            }
+        }
+
+        // 定时器计数（1秒中断）
+        timer_count++;
+        if(timer_count >= 64000)
+        {
+            timer_count = 0;
+            countdown_seconds--;
+            timer_display = 1;  // 标记需要更新显示
+            if(countdown_seconds == 255)  // 下溢
+            {
+                countdown_seconds = 59;
+                countdown_minutes--;
+                if(countdown_minutes == 255)  // 下溢，定时结束
+                {
+                    timer_running = 0;
+                    TIM_Cmd(TIM1, DISABLE);  // 关闭TIM1定时器
+                    DAC_Output(0);  // 关闭DAC输出
+                    OLED_ShowString(64, 6, " 00:00", 8);
+                    timer_display = 0;  // 重置显示标志
+                    return;
+                }
+            }
+           
+
+        }
+    }
+
+    TIM_ClearITPendingBit(TIM1, TIM_IT_Update);
+}

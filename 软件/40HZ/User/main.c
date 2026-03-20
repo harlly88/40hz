@@ -701,13 +701,15 @@ void TIM1_UP_IRQHandler(void)
 {
     u8 am_value;
     u16 temp;
+ 
 
     if(timer_running)
     {
         // 恢复AM调制
         am_value = sine_table[am_index];
         // 调整调制深度，避免输出饱和
-        temp = (u16)sine_table[sine_index] * (am_value - 32) / 64 + volume;
+        // 加入音量控制
+        temp = (u16)sine_table[sine_index] * (am_value - 32) * volume / (64 * 64) + 32 ;
 
         if(temp > 63) temp = 63;
         if(temp < 0) temp = 0;

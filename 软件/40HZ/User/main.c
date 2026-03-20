@@ -20,10 +20,15 @@
 
 #include "debug.h"
 #include "ch32v00x_i2c.h"
+#include "ch32v00x_flash.h"
 #include <stdlib.h>
 
 #define SINE_TABLE_SIZE  64
 #define OLED_I2C_ADDR    0x78  // OLED I2C地址
+
+// Flash存储相关定义
+#define FLASH_PAGE_SIZE    1024  // CH32V003 Flash页大小
+#define VOLUME_STORE_ADDR  0x08003C00  // 音量存储地址（最后一页）
 
 // ASCII字符集点阵数据声明
 extern const u8 asc2_0808[][8];
@@ -45,6 +50,10 @@ void I2C_Init_OLED(void);
 void I2C_SendByte(u8 addr, u8 data);
 void OLED_WriteCmd(u8 cmd);
 void OLED_WriteData(u8 data);
+
+// Flash存储函数声明
+u8 Flash_ReadVolume(void);
+void Flash_SaveVolume(u8 volume);
 
 const u8 sine_table[SINE_TABLE_SIZE] = {
     32, 35, 38, 41, 44, 47, 50, 52,
@@ -72,8 +81,9 @@ volatile u8 encoder_state = 0;  // 编码器状态
 volatile u16 encoder_count = 0;  // 编码器计数
 
 // 设置参数
-volatile int8_t volume = 32;  // 音量（0-63）
+volatile int8_t volume;  // 音量（0-63）
 volatile u8 last_volume_display = 0;  // 上一次显示的音量
+volatile u8 last_saved_volume = 0;  // 上一次保存到Flash的音量
 
 void DAC_GPIO_Init(void)
 {
@@ -132,6 +142,68 @@ void DAC_Output(u8 value)
 
     if(temp & 0x20) GPIOC->BSHR = GPIO_Pin_7;
     else           GPIOC->BCR  = GPIO_Pin_7;
+}
+
+/*********************************************************************
+ * @fn      Flash_ReadVolume
+ * @brief   从Flash读取音量值
+ * @return  音量值（0-63）
+ ********************************************************************/
+u8 Flash_ReadVolume(void)
+{
+    u32 *pFlash = (u32 *)VOLUME_STORE_ADDR;
+    u8 volume = (u8)*pFlash;
+    
+    // 检查是否是有效的音量值
+    if(volume >= 0 && volume <= 63)
+    {
+        return volume;
+    }
+    else
+    {
+        // 返回默认值
+        return 32;
+    }
+}
+
+/*********************************************************************
+ * @fn      Flash_SaveVolume
+ * @brief   将音量值保存到Flash
+ * @param   volume - 要保存的音量值（0-63）
+ * @return  none
+ ********************************************************************/
+void Flash_SaveVolume(u8 volume)
+{
+    FLASH_Status status;
+    u32 PageAddr = VOLUME_STORE_ADDR & 0xFFFFFC00;  // 计算页地址
+    
+    // 限制音量范围
+    if(volume > 63) volume = 63;
+    if(volume < 0) volume = 0;
+    
+    // 解锁Flash
+    FLASH_Unlock();
+    
+    // 擦除页
+    status = FLASH_ErasePage(PageAddr);
+    if(status != FLASH_COMPLETE)
+    {
+        // 擦除失败，上锁返回
+        FLASH_Lock();
+        return;
+    }
+    
+    // 写入数据
+    status = FLASH_ProgramWord(VOLUME_STORE_ADDR, volume);
+    if(status != FLASH_COMPLETE)
+    {
+        // 写入失败，上锁返回
+        FLASH_Lock();
+        return;
+    }
+    
+    // 上锁Flash
+    FLASH_Lock();
 }
 
 void TIM1_Init(void)
@@ -633,6 +705,10 @@ int main(void)
     SystemCoreClockUpdate();
     Delay_Init();
 
+    // 从Flash读取音量
+    volume = Flash_ReadVolume();
+    last_saved_volume = volume;
+
     // 初始化DAC GPIO
     DAC_GPIO_Init();
 
@@ -677,6 +753,23 @@ int main(void)
         {
             last_volume_display = volume;
             OLED_ShowNum(64, 2, volume, 2, 8);
+        }
+
+        // 自动保存音量到Flash（音量变化超过5或停止操作1秒）
+        static u16 save_timer = 0;
+        if(volume != last_saved_volume)
+        {
+            save_timer++;
+            if(save_timer >= 100)  // 100*10ms=1秒
+            {
+                Flash_SaveVolume((u8)volume);
+                last_saved_volume = volume;
+                save_timer = 0;
+            }
+        }
+        else
+        {
+            save_timer = 0;
         }
 
         // 延时

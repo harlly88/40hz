@@ -1,68 +1,68 @@
-# 40Hz音频调制项目
+# 40Hz Audio Modulation Project
 
-## 项目概述
+## Project Overview
 
-本项目基于CH32V003F4P6单片机实现了一个40Hz音频调制系统，通过R-2R网络实现DAC输出，OLED显示屏用于状态显示，旋转编码器用于音量控制。
+This project implements a 40Hz audio modulation system based on the CH32V003F4P6 microcontroller. It features R-2R network DAC output, OLED display for status monitoring, and rotary encoder for volume control.
 
-## 硬件架构
+## Hardware Architecture
 
-### 核心组件
+### Core Components
 
-1. **主控芯片**：CH32V003F4P6 (RISC-V 内核，24MHz)
-2. **DAC输出**：6位R-2R电阻网络
-3. **显示模块**：128x64 OLED I2C显示屏
-4. **输入设备**：旋转编码器（带按键）
-5. **电源**：USB-C 5V供电
+1. **Main Controller**: CH32V003F4P6 (RISC-V Core, 24MHz)
+2. **DAC Output**: 6-bit R-2R resistor network
+3. **Display Module**: 128x64 OLED I2C display
+4. **Input Device**: Rotary encoder with push button
+5. **Power Supply**: USB-C 5V
 
-### 引脚分配
+### Pin Assignment
 
-| 功能          | 引脚   | 说明                  |
-|---------------|--------|-----------------------|
-| DAC BIT0      | PC0    | 最低位                |
-| DAC BIT1      | PC3    |                       |
-| DAC BIT2      | PC4    |                       |
-| DAC BIT3      | PC5    |                       |
-| DAC BIT4      | PC6    |                       |
-| DAC BIT5      | PC7    | 最高位                |
-| I2C SCL       | PC2    | OLED时钟线            |
-| I2C SDA       | PC1    | OLED数据线            |
-| 编码器A相     | PD5    | 旋转输入A             |
-| 编码器B相     | PD6    | 旋转输入B             |
-| 编码器按键    | PD4    | 按键输入（上拉）      |
+| Function          | Pin    | Description           |
+|-------------------|--------|-----------------------|
+| DAC BIT0          | PC0    | Least significant bit|
+| DAC BIT1          | PC3    |                       |
+| DAC BIT2          | PC4    |                       |
+| DAC BIT3          | PC5    |                       |
+| DAC BIT4          | PC6    |                       |
+| DAC BIT5          | PC7    | Most significant bit  |
+| I2C SCL           | PC2    | OLED clock line       |
+| I2C SDA           | PC1    | OLED data line        |
+| Encoder Phase A   | PD5    | Rotary input A        |
+| Encoder Phase B   | PD6    | Rotary input B        |
+| Encoder Button    | PD4    | Button input (pull-up)|
 
-## 功能特性
+## Features
 
-### 音频调制
+### Audio Modulation
 
-- **载波频率**：1kHz 正弦波
-- **调制频率**：40Hz 正弦波
-- **调制方式**：幅度调制（AM）
-- **输出精度**：6位R-2R DAC
+- **Carrier Frequency**: 1kHz Sine Wave
+- **Modulation Frequency**: 40Hz Sine Wave
+- **Modulation Method**: Amplitude Modulation (AM)
+- **Output Precision**: 6-bit R-2R DAC
 
-### 系统功能
+### System Functions
 
-1. **音量控制**：
-   - 0-63级音量调节
-   - 旋转编码器控制
-   - 音量自动保存到Flash
+1. **Volume Control**:
+   - 0-63 level volume adjustment
+   - Rotary encoder control
+   - Auto-save volume to Flash memory
 
-2. **定时功能**：
-   - 默认30分钟倒计时
-   - 时间到自动关闭输出
-   - OLED实时显示剩余时间
+2. **Timer Function**:
+   - Default 30-minute countdown
+   - Auto-shutdown when time expires
+   - Real-time remaining time display on OLED
 
-3. **OLED显示**：
-   - 项目名称
-   - 当前音量值
-   - 剩余时间
-   - 系统状态
+3. **OLED Display**:
+   - Project name
+   - Current volume value
+   - Remaining time
+   - System status
 
-## 软件实现
+## Software Implementation
 
-### 核心算法
+### Core Algorithm
 
 ```c
-// 1kHz正弦波表（64点）
+// 1kHz sine wave table (64 points)
 const u8 sine_table[SINE_TABLE_SIZE] = {
     32, 35, 38, 41, 44, 47, 50, 52,
     55, 57, 59, 61, 62, 63, 63, 63,
@@ -75,68 +75,68 @@ const u8 sine_table[SINE_TABLE_SIZE] = {
 };
 ```
 
-### 调制原理
+### Modulation Principle
 
 ```c
-// 40Hz AM调制实现
+// 40Hz AM modulation implementation
 temp = (u16)sine_table[sine_index] * (am_value - 32) * volume / (64 * 64) + 32;
 ```
 
-## 项目结构
+## Project Structure
 
 ```
 .
-├── PCB/                # 电路板设计文件
-│   ├── Schematic1/     # 原理图
-│   ├── Gerber_PCB1_1_2026-04-08.zip  # Gerber文件
-│   └── PCB1_1.pcbdoc   # PCB设计
-├── Shell/              # 3D打印外壳
+├── PCB/                # Circuit board design files
+│   ├── Schematic1/     # Schematic diagrams
+│   ├── Gerber_PCB1_1_2026-04-08.zip  # Gerber files
+│   └── PCB1_1.pcbdoc   # PCB design
+├── Shell/              # 3D printed enclosure
 │   ├── Back .stl
 │   └── Front.stl
-├── html/               # 网页界面
+├── html/               # Web interface
 │   └── index.html
-└── software/           # 源代码
-    ├── 40HZ/           # 主项目
-    │   ├── Core/       # 核心库
-    │   ├── Debug/      # 调试模块
-    │   ├── Ld/         # 链接脚本
-    │   ├── Peripheral/ # 外设驱动
-    │   ├── Startup/    # 启动文件
-    │   └── User/       # 用户代码
-    └── 参考/           # 参考资料
+└── software/           # Source code
+    ├── 40HZ/           # Main project
+    │   ├── Core/       # Core libraries
+    │   ├── Debug/      # Debug module
+    │   ├── Ld/         # Linker scripts
+    │   ├── Peripheral/ # Peripheral drivers
+    │   ├── Startup/    # Startup files
+    │   └── User/       # User code
+    └── 参考/           # Reference materials
 ```
 
-## 编译与烧录
+## Compilation and Programming
 
-### 开发环境
+### Development Environment
 
 - MounRiver Studio
-- RISC-V GCC工具链
-- WCH-Link烧录器
+- RISC-V GCC Toolchain
+- WCH-Link Programmer
 
-### 编译步骤
+### Compilation Steps
 
-1. 打开MounRiver Studio
-2. 导入项目：`software/40HZ/`
-3. 编译项目
-4. 生成`40HZ.hex`文件
+1. Open MounRiver Studio
+2. Import project: `software/40HZ/`
+3. Compile the project
+4. Generate `40HZ.hex` file
 
-### 烧录
+### Programming
 
-1. 连接WCH-Link到开发板
-2. 选择烧录`40HZ.hex`文件
-3. 执行烧录
+1. Connect WCH-Link to development board
+2. Select `40HZ.hex` file for programming
+3. Execute programming
 
-## 使用说明
+## User Guide
 
-### 操作指南
+### Operation Instructions
 
-1. **开机**：连接USB-C电源
-2. **音量调节**：旋转编码器调节音量（0-63）
-3. **定时功能**：默认30分钟倒计时，时间到自动关闭
-4. **音量保存**：音量变化1秒后自动保存
+1. **Power On**: Connect USB-C power
+2. **Volume Adjustment**: Rotate encoder to adjust volume (0-63)
+3. **Timer Function**: Default 30-minute countdown, auto-shutdown when time expires
+4. **Volume Save**: Auto-save volume after 1 second of inactivity
 
-### 显示界面
+### Display Interface
 
 ```
 40Hz AM Wave
@@ -144,56 +144,56 @@ Volume: 32
 Time: 30:00
 ```
 
-## 硬件制作
+## Hardware Manufacturing
 
-### PCB焊接
+### PCB Soldering
 
-1. 焊接CH32V003F4P6单片机
-2. 焊接R-2R电阻网络（6位）
-3. 焊接OLED显示屏
-4. 焊接旋转编码器
-5. 焊接USB-C插座
+1. Solder CH32V003F4P6 microcontroller
+2. Solder 6-bit R-2R resistor network
+3. Solder OLED display module
+4. Solder rotary encoder
+5. Solder USB-C connector
 
-### 外壳组装
+### Enclosure Assembly
 
-1. 3D打印外壳文件
-2. 安装电路板
-3. 安装旋转编码器旋钮
-4. 安装OLED显示屏
+1. 3D print enclosure files
+2. Install circuit board
+3. Attach rotary encoder knob
+4. Mount OLED display
 
-## 技术细节
+## Technical Details
 
-### 时钟配置
+### Clock Configuration
 
-- 系统时钟：24MHz
-- TIM1定时器：64kHz中断
-- 音频输出：1kHz载波
-- 调制频率：40Hz
+- System Clock: 24MHz
+- TIM1 Timer: 64kHz interrupt
+- Audio Output: 1kHz carrier wave
+- Modulation Frequency: 40Hz
 
-### Flash存储
+### Flash Memory
 
-- 音量存储地址：0x08003C00
-- 自动保存机制：音量变化1秒后保存
+- Volume storage address: 0x08003C00
+- Auto-save mechanism: Save after 1 second of volume change
 
-## 故障排除
+## Troubleshooting
 
-### 常见问题
+### Common Issues
 
-1. **无显示**：检查OLED接线
-2. **无音频输出**：检查R-2R网络焊接
-3. **编码器不工作**：检查引脚连接
-4. **音量不保存**：检查Flash写入代码
+1. **No Display**: Check OLED wiring connections
+2. **No Audio Output**: Check R-2R network soldering
+3. **Encoder Not Working**: Check pin connections
+4. **Volume Not Saving**: Check Flash write code
 
-## 版本历史
+## Version History
 
-- V1.0.0 (2023/12/25)：初始版本
+- V1.0.0 (2023/12/25): Initial release
 
-## 许可证
+## License
 
-本项目基于WCH CH32V003开发板参考设计，遵循MIT许可证。
+This project is based on WCH CH32V003 development board reference design, licensed under MIT License.
 
-## 参考资料
+## References
 
-- CH32V003数据手册
-- SSD1315 OLED驱动手册
-- R-2R DAC设计指南
+- CH32V003 Datasheet
+- SSD1315 OLED Driver Manual
+- R-2R DAC Design Guide

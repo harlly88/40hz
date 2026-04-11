@@ -1,8 +1,16 @@
 # 40Hz Audio Modulation Project
 
+## [中文版](readme_cn.md)
+
+
 ## Project Overview
 
 This project implements a 40Hz audio modulation system based on the CH32V003F4P6 microcontroller. It features R-2R network DAC output, OLED display for status monitoring, and rotary encoder for volume control.
+
+This system is based on scientific research showing that 40Hz auditory stimulation is effective in treating Alzheimer's disease in mouse and monkey models. My mother also suffers from Alzheimer's disease, which inspired me to develop this system.
+
+- [Multisensory gamma stimulation promotes glymphatic clearance of amyloid](https://pubmed.ncbi.nlm.nih.gov/38418876/)
+- [Long-term effects of forty-hertz auditory stimulation as a treatment of Alzheimer’s disease: Insights from an aged monkey model study](https://pmc.ncbi.nlm.nih.gov/articles/PMC12799102/)
 
 ## Hardware Architecture
 
@@ -103,7 +111,6 @@ temp = (u16)sine_table[sine_index] * (am_value - 32) * volume / (64 * 64) + 32;
     │   ├── Peripheral/ # Peripheral drivers
     │   ├── Startup/    # Startup files
     │   └── User/       # User code
-    └── 参考/           # Reference materials
 ```
 
 ## Compilation and Programming
@@ -126,6 +133,14 @@ temp = (u16)sine_table[sine_index] * (am_value - 32) * volume / (64 * 64) + 32;
 1. Connect WCH-Link to development board
 2. Select `40HZ.hex` file for programming
 3. Execute programming
+
+### PCB Manufacturing
+
+The PCB files can be directly manufactured at [JLCPCB](https://www.jlc.com/).
+
+### Programming Tool
+
+Programming can be done using the [WCH-Link Programmer](https://www.wch.cn/downloads/WCH-LinkUtility_ZIP.html).
 
 ## User Guide
 

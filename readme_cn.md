@@ -1,8 +1,14 @@
 # 40Hz音频调制项目
 
+## [英文版](README.md)
+
 ## 项目概述
 
 本项目基于CH32V003F4P6单片机实现了一个40Hz音频调制系统，通过R-2R网络实现DAC输出，OLED显示屏用于状态显示，旋转编码器用于音量控制。
+来源于这两篇论文，40Hz音频调制系统对阿尔兹海默症的小白鼠和恒河猴是有效的。我母亲也患有阿尔兹海默症，我决定实现这个系统。
+[多感官伽马刺激可促进淀粉样蛋白的类淋巴系统清除](https://pubmed.ncbi.nlm.nih.gov/38418876/)
+[40 赫兹听觉刺激作为阿尔茨海默病治疗手段的长期效应：一项老年猴模型研究的启示](https://pmc.ncbi.nlm.nih.gov/articles/PMC12799102/)
+
 
 ## 硬件架构
 
@@ -103,7 +109,7 @@ temp = (u16)sine_table[sine_index] * (am_value - 32) * volume / (64 * 64) + 32;
     │   ├── Peripheral/ # 外设驱动
     │   ├── Startup/    # 启动文件
     │   └── User/       # 用户代码
-    └── 参考/           # 参考资料
+    
 ```
 
 ## 编译与烧录
@@ -146,13 +152,10 @@ Time: 30:00
 
 ## 硬件制作
 
-### PCB焊接
+### PCB
 
-1. 焊接CH32V003F4P6单片机
-2. 焊接R-2R电阻网络（6位）
-3. 焊接OLED显示屏
-4. 焊接旋转编码器
-5. 焊接USB-C插座
+PCB直接在[嘉立创](https://www.jlc.com/)打样即可。
+通过[WCH-Link烧录器](https://www.wch.cn/downloads/WCH-LinkUtility_ZIP.html)下载程序。
 
 ### 外壳组装
 

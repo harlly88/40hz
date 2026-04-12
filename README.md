@@ -9,7 +9,7 @@ This project implements a 40Hz audio modulation system based on the CH32V003F4P6
 
 This system is based on scientific research showing that 40Hz auditory stimulation is effective in treating Alzheimer's disease in mouse and monkey models. My mother also suffers from Alzheimer's disease, which inspired me to develop this system.
 
-- [Multisensory gamma stimulation promotes glymphatic clearance of amyloid](https://pubmed.ncbi.nlm.nih.gov/38418876/)
+- [Multisensory gamma stimulation promotes glymphatic clearance of amyloid](https://www.nature.com/articles/s41586-024-07132-6)
 - [Long-term effects of forty-hertz auditory stimulation as a treatment of Alzheimer’s disease: Insights from an aged monkey model study](https://pmc.ncbi.nlm.nih.gov/articles/PMC12799102/)
 
 ## Hardware Architecture
@@ -169,12 +169,9 @@ Time: 30:00
 4. Solder rotary encoder
 5. Solder USB-C connector
 
-### Enclosure Assembly
+### Enclosure
 
-1. 3D print enclosure files
-2. Install circuit board
-3. Attach rotary encoder knob
-4. Mount OLED display
+Shell/ 3D printed enclosure files
 
 ## Technical Details
 
@@ -189,6 +186,10 @@ Time: 30:00
 
 - Volume storage address: 0x08003C00
 - Auto-save mechanism: Save after 1 second of volume change
+
+## Appearance
+![Image](./tu1.jpg)
+![Image](./tu2.jpg)
 
 ## Troubleshooting
 

@@ -11,7 +11,6 @@
 
 [40 赫兹听觉刺激作为阿尔茨海默病治疗手段的长期效应：一项老年猴模型研究的启示](https://pmc.ncbi.nlm.nih.gov/articles/PMC12799102/)
 
-
 ## 硬件架构
 
 ### 核心组件
@@ -24,19 +23,19 @@
 
 ### 引脚分配
 
-| 功能          | 引脚   | 说明                  |
-|---------------|--------|-----------------------|
-| DAC BIT0      | PC0    | 最低位                |
-| DAC BIT1      | PC3    |                       |
-| DAC BIT2      | PC4    |                       |
-| DAC BIT3      | PC5    |                       |
-| DAC BIT4      | PC6    |                       |
-| DAC BIT5      | PC7    | 最高位                |
-| I2C SCL       | PC2    | OLED时钟线            |
-| I2C SDA       | PC1    | OLED数据线            |
-| 编码器A相     | PD5    | 旋转输入A             |
-| 编码器B相     | PD6    | 旋转输入B             |
-| 编码器按键    | PD4    | 按键输入（上拉）      |
+| 功能       | 引脚  | 说明       |
+| -------- | --- | -------- |
+| DAC BIT0 | PC0 | 最低位      |
+| DAC BIT1 | PC3 | <br />   |
+| DAC BIT2 | PC4 | <br />   |
+| DAC BIT3 | PC5 | <br />   |
+| DAC BIT4 | PC6 | <br />   |
+| DAC BIT5 | PC7 | 最高位      |
+| I2C SCL  | PC2 | OLED时钟线  |
+| I2C SDA  | PC1 | OLED数据线  |
+| 编码器A相    | PD5 | 旋转输入A    |
+| 编码器B相    | PD6 | 旋转输入B    |
+| 编码器按键    | PD4 | 按键输入（上拉） |
 
 ## 功能特性
 
@@ -53,12 +52,10 @@
    - 0-63级音量调节
    - 旋转编码器控制
    - 音量自动保存到Flash
-
 2. **定时功能**：
    - 默认30分钟倒计时
    - 时间到自动关闭输出
    - OLED实时显示剩余时间
-
 3. **OLED显示**：
    - 项目名称
    - 当前音量值
@@ -159,6 +156,8 @@ Time: 30:00
 PCB直接在[嘉立创](https://www.jlc.com/)打样即可。
 通过[WCH-Link烧录器](https://www.wch.cn/downloads/WCH-LinkUtility_ZIP.html)下载程序。
 
+<https://oshwhub.com/harlly/project_mxclzras>
+
 ### 外壳
 
 Shell/ 目录下包含3D打印外壳的文件。
@@ -178,6 +177,7 @@ Shell/ 目录下包含3D打印外壳的文件。
 - 自动保存机制：音量变化1秒后保存
 
 ## 外观
+
 ![Image](./tu1.jpg)
 ![Image](./tu2.jpg)
 
@@ -203,3 +203,4 @@ Shell/ 目录下包含3D打印外壳的文件。
 - CH32V003数据手册
 - SSD1315 OLED驱动手册
 - R-2R DAC设计指南
+

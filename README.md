@@ -2,7 +2,6 @@
 
 ## [中文版](readme_cn.md)
 
-
 ## Project Overview
 
 This project implements a 40Hz audio modulation system based on the CH32V003F4P6 microcontroller. It features R-2R network DAC output, OLED display for status monitoring, and rotary encoder for volume control.
@@ -24,19 +23,19 @@ This system is based on scientific research showing that 40Hz auditory stimulati
 
 ### Pin Assignment
 
-| Function          | Pin    | Description           |
-|-------------------|--------|-----------------------|
-| DAC BIT0          | PC0    | Least significant bit|
-| DAC BIT1          | PC3    |                       |
-| DAC BIT2          | PC4    |                       |
-| DAC BIT3          | PC5    |                       |
-| DAC BIT4          | PC6    |                       |
-| DAC BIT5          | PC7    | Most significant bit  |
-| I2C SCL           | PC2    | OLED clock line       |
-| I2C SDA           | PC1    | OLED data line        |
-| Encoder Phase A   | PD5    | Rotary input A        |
-| Encoder Phase B   | PD6    | Rotary input B        |
-| Encoder Button    | PD4    | Button input (pull-up)|
+| Function        | Pin | Description            |
+| --------------- | --- | ---------------------- |
+| DAC BIT0        | PC0 | Least significant bit  |
+| DAC BIT1        | PC3 | <br />                 |
+| DAC BIT2        | PC4 | <br />                 |
+| DAC BIT3        | PC5 | <br />                 |
+| DAC BIT4        | PC6 | <br />                 |
+| DAC BIT5        | PC7 | Most significant bit   |
+| I2C SCL         | PC2 | OLED clock line        |
+| I2C SDA         | PC1 | OLED data line         |
+| Encoder Phase A | PD5 | Rotary input A         |
+| Encoder Phase B | PD6 | Rotary input B         |
+| Encoder Button  | PD4 | Button input (pull-up) |
 
 ## Features
 
@@ -53,12 +52,10 @@ This system is based on scientific research showing that 40Hz auditory stimulati
    - 0-63 level volume adjustment
    - Rotary encoder control
    - Auto-save volume to Flash memory
-
 2. **Timer Function**:
    - Default 30-minute countdown
    - Auto-shutdown when time expires
    - Real-time remaining time display on OLED
-
 3. **OLED Display**:
    - Project name
    - Current volume value
@@ -138,6 +135,8 @@ temp = (u16)sine_table[sine_index] * (am_value - 32) * volume / (64 * 64) + 32;
 
 The PCB files can be directly manufactured at [JLCPCB](https://www.jlc.com/).
 
+<https://oshwhub.com/harlly/project_mxclzras>
+
 ### Programming Tool
 
 Programming can be done using the [WCH-Link Programmer](https://www.wch.cn/downloads/WCH-LinkUtility_ZIP.html).
@@ -188,6 +187,7 @@ Shell/ 3D printed enclosure files
 - Auto-save mechanism: Save after 1 second of volume change
 
 ## Appearance
+
 ![Image](./tu1.jpg)
 ![Image](./tu2.jpg)
 
@@ -213,3 +213,4 @@ This project is based on WCH CH32V003 development board reference design, licens
 - CH32V003 Datasheet
 - SSD1315 OLED Driver Manual
 - R-2R DAC Design Guide
+
